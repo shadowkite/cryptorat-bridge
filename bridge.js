@@ -1,7 +1,7 @@
 import { TestNetWallet, Wallet, TokenMintRequest } from "mainnet-js";
 import { bigIntToVmNumber, binToHex } from '@bitauth/libauth';
 import { ethers } from "ethers";
-import { writeInfoToDb, getAllBridgeInfo, getRecentBridgeInfo, checkAmountBridgedDb, addBridgeInfoToNFT, bridgeInfoEthAddress } from "./database.js"
+import { writeInfoToDb, getAllBridgeInfo, getRecentBridgeInfo, checkAmountBridgedDb, addBridgeInfoToNFT, bridgeInfoEthAddress, initiateTable } from "./database.js"
 import abi from "./abi.json" assert { type: 'json' }
 import express from "express";
 import cors from "cors";
@@ -13,6 +13,11 @@ const derivationPathAddress = process.env.DERIVATIONPATH;
 const seedphrase = process.env.SEEDPHRASE;
 const serverUrl = process.env.SERVER_URL;
 const contractAddress = process.env.CONTRACTADDR;
+
+// Initiate SQL table:
+initiateTable().then(() => {
+  console.log('Initiated table')
+})
 
 let nftsBridged = 0;
 const amountBridgedDb = await checkAmountBridgedDb();
@@ -76,24 +81,24 @@ app.get("/address/:originAddress", async (req, res) => {
 
 // initialize SBCH network provider
 let provider = new ethers.providers.JsonRpcProvider('https://smartbch.greyh.at');
-// initilize reapers contract
-const reapersContract = new ethers.Contract(contractAddress, abi, provider);
+const ratContract = new ethers.Contract(contractAddress, abi, provider);
 
 // mainnet-js generates m/44'/0'/0'/0/0 by default so have to switch it
 const walletClass = network == "mainnet" ? Wallet : TestNetWallet;
 const wallet = await walletClass.fromSeed(seedphrase, derivationPathAddress);
 console.log(`wallet address: ${wallet.getDepositAddress()}`);
 const balance = await wallet.getBalance();
-console.log(`Bch amount in walletAddress is ${balance.bch}bch or ${balance.sat}sats`);
+console.log(`Bch amount in walletAddress is ${balance.bch} BCH or ${balance.sat} SATS`);
 
-// listen to all reaper transfers
+// listen to all NFT transfers
 const burnAddress = "0x000000000000000000000000000000000000dEaD"
 const burnAddress2 = "0x0000000000000000000000000000000000000000"
-reapersContract.on("Transfer", (from, to, amount, event) => {
+ratContract.on("Transfer", (from, to, amount, event) => {
   const erc721numberHex = event.args[2]?._hex
   const nftNumber = parseInt(erc721numberHex, 16);
-  if(to != burnAddress && to !=burnAddress2) return
-  console.log(`${ from } burnt reaper #${nftNumber}`);
+  if(to != burnAddress && to !=burnAddress2)
+      return
+  console.log(`${ from } burnt rat #${nftNumber}`);
   const timeBurned = new Date().toISOString();
   const burnInfo = {
     timeBurned,
