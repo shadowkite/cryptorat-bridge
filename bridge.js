@@ -153,7 +153,6 @@ try {
   for(let j = 0; j < 10;j++) {
     let events = await ratContract.queryFilter(eventFilter, (currentBlock - (j * 1000) - 1000), (currentBlock - (j * 1000)));
     for (let i in events) {
-      console.log('Added past event to Queue');
       addEventToDb(events[i]).then((result) => {
         if(!result) console.log('Skipped')
       })
