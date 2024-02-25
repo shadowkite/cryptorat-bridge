@@ -51,6 +51,11 @@ export async function writeInfoToDb(infoObj){
     allKeys = allKeys.slice(0, -2);
     allValues = allValues.slice(0, -2);
 
+    const exists = await getRows(`SELECT * FROM bridge WHERE txIdSmartBCH = '${infoObj.txIdSmartBCH}'`);
+    if(exists.rows.length > 0) {
+      return false;
+    }
+
     const query = `INSERT INTO bridge (${allKeys}) VALUES(${allValues}) RETURNING *;`;
     console.log('Executing insert', query)
     await db.run(query);
@@ -58,6 +63,17 @@ export async function writeInfoToDb(infoObj){
   } catch (e) {
     console.log(e);
     return false;
+  }
+}
+export async function getCtAddress(origin) {
+  try {
+    const result = await getRows(`SELECT destinationAddress FROM bridge 
+                          WHERE sbchOriginAddress = '${origin}' AND destinationAddress IS NOT NULL 
+                          ORDER BY timeBurned DESC
+                          LIMIT 1`);
+    return result.rows[0].destinationAddress;
+  } catch (e) {
+    return null;
   }
 }
 
