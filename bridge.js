@@ -16,6 +16,8 @@ import express from "express";
 import cors from "cors";
 import 'dotenv/config'
 import * as fs from "fs";
+import axios from "axios";
+import * as https from "https";
 
 const tokenId = process.env.TOKENID;
 const network =  process.env.NETWORK;
@@ -37,6 +39,9 @@ if(amountBridgedDb){
 }
 let bridgingNft = false;
 
+var privateKey = fs.readFileSync( process.env.PRIVKEY_PATH );
+var certificate = fs.readFileSync( process.env.CERT_PATH );
+
 // set up express for endpoints
 const app = express();
 const port = 3050;
@@ -48,6 +53,68 @@ app.use(express.json()); //req.body
 app.get('/', (req, res) => {
   res.json({nftsBridged});
 })
+
+const validateMainchainSignature = async function (origin, message, signature) {
+  let slpPublicAddress = await Wallet.watchOnly(origin)
+  if(await slpPublicAddress.verify(message, signature)) {
+    return true;
+  }
+  return false;
+}
+
+app.post('/slp-bridge', async(req, res) => {
+  const { slpOrigin, dstAddress, message, signature } = req.body;
+  if(!await validateMainchainSignature()) {
+    throw `Invalid signature`
+  }
+  await tryBridging(slpOrigin, dstAddress, message + '-' + signature)
+})
+
+app.post('/slp-sign', async (req, res) => {
+  try {
+    const { slpOrigin, message, signature } = req.body;
+    let origin = slpOrigin
+
+    if(slpOrigin.length < 30 || message.length < 10 || signature.length < 20) {
+      throw `Somethings wrong`
+    }
+
+    if(!await validateMainchainSignature(slpOrigin, message, signature)) {
+      throw `Invalid signature`
+    }
+
+    let balances = await axios.get(`https://rest.bch.actorforth.org/v2/slp/balancesForAddress/` + origin)
+    for(let i in balances.data) {
+      try {
+        let token = await axios.get(`https://api.cryptor.at/original/nft/` + balances.data[i].tokenId)
+        if(typeof token.data['rat-number'] == 'undefined') {
+          console.log(balances.data[i].tokenId)
+          continue;
+        }
+        const timeBurned = new Date().toISOString();
+        const burnInfo = {
+          timeBurned,
+          txIdSmartBCH: balances.data[i].tokenId,
+          nftNumber: token.data['rat-number'],
+          sbchOriginAddress: origin
+        }
+        await writeInfoToDb(burnInfo);
+      }catch(e){
+        console.log(e)
+        console.log('skipped')
+      }
+    }
+    const infoAddress = await bridgeInfoEthAddress(slpOrigin);
+    const listNftItems = infoAddress.filter(item => !item.timeBridged)
+    if (listNftItems) {
+      res.json(listNftItems);
+    } else {
+      res.status(404).send();
+    }
+  } catch(e) {
+    console.log(e)
+  }
+});
 
 app.post("/signbridging", async (req, res) => {
   try{
@@ -174,7 +241,7 @@ const cacheMetadata = async function() {
   }
 }
 
-async function tryBridging(sbchOriginAddress, destinationAddress, signatureProof){
+async function tryBridging(sbchOriginAddress, destinationAddress, signatureProof) {
   console.log('Trying..')
   // if bridging is already happening, wait 2 seconds
   if(bridgingNft) {
@@ -183,7 +250,6 @@ async function tryBridging(sbchOriginAddress, destinationAddress, signatureProof
   } else {
     try {
       bridgingNft = true;
-
       if(!isTokenAddress(destinationAddress)) {
         throw `Not a valid CT address`
       }
@@ -247,7 +313,10 @@ async function bridgeNFTs(listNftNumbers, destinationAddress, signatureProof){
   }
 }
 
-app.listen(port, () => {
+https.createServer({
+  key: privateKey,
+  cert: certificate
+}, app).listen(port, () => {
   console.log(`Server listening at ${url}`);
 
   // cacheMetadata();
