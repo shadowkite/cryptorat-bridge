@@ -213,7 +213,7 @@ const main = async function() {
   /** SLP Bridge **/
   app.post('/slp-bridge', async (req, res) => {
     const {slpOrigin, dstAddress, message, signature} = req.body;
-    if (!await validateMainchainSignature()) {
+    if (!await validateMainchainSignature(slpOrigin, message, signature)) {
       throw `Invalid signature`
     }
     await tryBridging(slpOrigin, dstAddress, message + '-' + signature)

@@ -65,6 +65,7 @@ export async function writeInfoToDb(infoObj){
     return false;
   }
 }
+
 export async function getCtAddress(origin) {
   try {
     const result = await getRows(`SELECT destinationAddress FROM bridge 
